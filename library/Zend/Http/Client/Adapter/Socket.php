@@ -73,11 +73,13 @@ class Zend_Http_Client_Adapter_Socket implements Zend_Http_Client_Adapter_Interf
      * @var array
      */
     protected $config = array(
-        'persistent'    => false,
-        'ssltransport'  => 'ssl',
-        'sslcert'       => null,
-        'sslpassphrase' => null,
-        'sslusecontext' => false
+        'persistent'        => false,
+        'ssltransport'      => 'ssl',
+        'sslcert'           => null,
+        'sslpassphrase'     => null,
+        'sslusecontext'     => false,
+        'verify_peer'       => null,
+        'verify_peer_name'  => null,
     );
 
     /**
@@ -203,18 +205,23 @@ class Zend_Http_Client_Adapter_Socket implements Zend_Http_Client_Adapter_Interf
         if (! is_resource($this->socket) || ! $this->config['keepalive']) {
             $context = $this->getStreamContext();
             if ($secure || $this->config['sslusecontext']) {
-                if ($this->config['sslcert'] !== null) {
-                    if (! stream_context_set_option($context, 'ssl', 'local_cert',
-                                                    $this->config['sslcert'])) {
-                        require_once 'Zend/Http/Client/Adapter/Exception.php';
-                        throw new Zend_Http_Client_Adapter_Exception('Unable to set sslcert option');
-                    }
-                }
-                if ($this->config['sslpassphrase'] !== null) {
-                    if (! stream_context_set_option($context, 'ssl', 'passphrase',
-                                                    $this->config['sslpassphrase'])) {
-                        require_once 'Zend/Http/Client/Adapter/Exception.php';
-                        throw new Zend_Http_Client_Adapter_Exception('Unable to set sslpassphrase option');
+                foreach (array('sslcert', 'sslpassphrase', 'verify_peer', 'verify_peer_name') as $sslOption) {
+                    if (isset($this->config[$sslOption]) && $this->config[$sslOption] !== null) {
+                        switch ($sslOption) {
+                            case 'sslpassphrase':
+                                $option = 'passphrase';
+                                break;
+                            case 'sslcert':
+                                $option = 'local_cert';
+                                break;
+                            default:
+                                $option = $sslOption;
+                        }
+
+                        if (! stream_context_set_option($context, 'ssl', $option, $this->config[$sslOption])) {
+                            require_once 'Zend/Http/Client/Adapter/Exception.php';
+                            throw new Zend_Http_Client_Adapter_Exception('Unable to set ' . $sslOption .' option');
+                        }
                     }
                 }
             }
@@ -222,7 +229,7 @@ class Zend_Http_Client_Adapter_Socket implements Zend_Http_Client_Adapter_Interf
             $flags = STREAM_CLIENT_CONNECT;
             if ($this->config['persistent']) $flags |= STREAM_CLIENT_PERSISTENT;
 
-            $this->socket = @stream_socket_client($host . ':' . $port,
+            $this->socket = stream_socket_client($host . ':' . $port,
                                                   $errno,
                                                   $errstr,
                                                   (int) $this->config['timeout'],
@@ -233,7 +240,8 @@ class Zend_Http_Client_Adapter_Socket implements Zend_Http_Client_Adapter_Interf
                 $this->close();
                 require_once 'Zend/Http/Client/Adapter/Exception.php';
                 throw new Zend_Http_Client_Adapter_Exception(
-                    'Unable to Connect to ' . $host . ':' . $port . '. Error #' . $errno . ': ' . $errstr);
+                    'Unable to Connect to ' . $host . ':' . $port . '. Error #' . $errno . ': ' . $errstr
+                    . ' options: ' . print_r($this->config, true));
             }
 
             // Set the stream timeout
@@ -404,7 +412,7 @@ class Zend_Http_Client_Adapter_Socket implements Zend_Http_Client_Adapter_Interf
                 } while ($chunksize > 0);
             } else {
                 $this->close();
-        require_once 'Zend/Http/Client/Adapter/Exception.php';
+                require_once 'Zend/Http/Client/Adapter/Exception.php';
                 throw new Zend_Http_Client_Adapter_Exception('Cannot handle "' .
                     $headers['transfer-encoding'] . '" transfer encoding');
             }

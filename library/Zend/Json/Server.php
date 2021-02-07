@@ -46,6 +46,12 @@ class Zend_Json_Server extends Zend_Server_Abstract
     protected $_autoEmitResponse = true;
 
     /**
+     * Flag: whether or not to auto handle exceptions
+     * @var bool
+     */
+    protected $_autoHandleExceptions = true;
+
+    /**
      * @var bool Flag; allow overwriting existing methods when creating server definition
      */
     protected $_overwriteExistingMethods = true;
@@ -300,6 +306,28 @@ class Zend_Json_Server extends Zend_Server_Abstract
         return $this->_autoEmitResponse;
     }
 
+    /**
+     * Set flag indicating whether or not to auto handle exceptions
+     *
+     * @param  bool $flag
+     * @return Zend_Json_Server
+     */
+    public function setAutoHandleExceptions($flag)
+    {
+        $this->_autoHandleExceptions = (bool) $flag;
+        return $this;
+    }
+
+    /**
+     * Will we auto handle exceptions?
+     *
+     * @return bool
+     */
+    public function autoHandleExceptions()
+    {
+        return $this->_autoHandleExceptions;
+    }
+
     // overloading for SMD metadata
     /**
      * Overload to accessors of SMD object
@@ -382,7 +410,7 @@ class Zend_Json_Server extends Zend_Server_Abstract
         $defaultParams = array_slice($params, count($args));
         foreach ($defaultParams as $param) {
             $value = null;
-            if (array_key_exists('default', $param)) {
+            if ((isset($param['default']) || array_key_exists('default', $param))) {
                 $value = $param['default'];
             }
             array_push($args, $value);
@@ -526,41 +554,46 @@ class Zend_Json_Server extends Zend_Server_Abstract
             $params = $this->_getDefaultParams($params, $serviceParams);
         }
 
+        // FIXME removed that to allow api methods that are not "reflected" in a real class/function
         //Make sure named parameters are passed in correct order
-        if ( is_string( key( $params ) ) ) {
-
-            $callback = $invocable->getCallback();
-            if ('function' == $callback->getType()) {
-                $reflection = new ReflectionFunction( $callback->getFunction() );
-                $refParams  = $reflection->getParameters();
-            } else {
-
-                $reflection = new ReflectionMethod(
-                    $callback->getClass(),
-                    $callback->getMethod()
-                );
-                $refParams = $reflection->getParameters();
-            }
-
-            $orderedParams = array();
-            foreach( $reflection->getParameters() as $refParam ) {
-                if( isset( $params[ $refParam->getName() ] ) ) {
-                    $orderedParams[ $refParam->getName() ] = $params[ $refParam->getName() ];
-                } elseif( $refParam->isOptional() ) {
-                    $orderedParams[ $refParam->getName() ] = $refParam->getDefaultValue();
-                } else {
-                    throw new Zend_Server_Exception(
-                        'Method ' . $request->getMethod() .  ' is missing required parameter: ' . $refParam->getName()
-                    );
-                }
-            }
-            $params = $orderedParams;
-        }
+//        if ( is_string( key( $params ) ) ) {
+//
+//            $callback = $invocable->getCallback();
+//            if ('function' == $callback->getType()) {
+//                $reflection = new ReflectionFunction( $callback->getFunction() );
+//                $refParams  = $reflection->getParameters();
+//            } else {
+//
+//                $reflection = new ReflectionMethod(
+//                    $callback->getClass(),
+//                    $callback->getMethod()
+//                );
+//                $refParams = $reflection->getParameters();
+//            }
+//
+//            $orderedParams = array();
+//            foreach( $reflection->getParameters() as $refParam ) {
+//                if( isset( $params[ $refParam->getName() ] ) ) {
+//                    $orderedParams[ $refParam->getName() ] = $params[ $refParam->getName() ];
+//                } elseif( $refParam->isOptional() ) {
+//                    $orderedParams[ $refParam->getName() ] = $refParam->getDefaultValue();
+//                } else {
+//                    throw new Zend_Server_Exception(
+//                        'Method ' . $request->getMethod() .  ' is missing required parameter: ' . $refParam->getName()
+//                    );
+//                }
+//            }
+//            $params = $orderedParams;
+//        }
 
         try {
             $result = $this->_dispatch($invocable, $params);
         } catch (Exception $e) {
-            return $this->fault($e->getMessage(), $e->getCode(), $e);
+            if ($this->autoHandleExceptions()) {
+                return $this->fault($e->getMessage(), $e->getCode());
+            } else {
+                throw $e;
+            }
         }
 
         $this->getResponse()->setResult($result);
